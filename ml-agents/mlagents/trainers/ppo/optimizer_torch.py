@@ -12,6 +12,7 @@ from mlagents.trainers.settings import (
     TrainerSettings,
     OnPolicyHyperparamSettings,
     ScheduleType,
+    CyclicSettings,
 )
 from mlagents.trainers.torch_entities.networks import ValueNetwork
 from mlagents.trainers.torch_entities.agent_action import AgentAction
@@ -30,6 +31,7 @@ class PPOSettings(OnPolicyHyperparamSettings):
     learning_rate_schedule: ScheduleType = ScheduleType.LINEAR
     beta_schedule: ScheduleType = ScheduleType.LINEAR
     epsilon_schedule: ScheduleType = ScheduleType.LINEAR
+    cyclic_settings: CyclicSettings = None
 
 
 class TorchPPOOptimizer(TorchOptimizer):
@@ -68,18 +70,21 @@ class TorchPPOOptimizer(TorchOptimizer):
             self.hyperparameters.learning_rate,
             1e-10,
             self.trainer_settings.max_steps,
+            cyclic_settings=self.hyperparameters.cyclic_settings,
         )
         self.decay_epsilon = ModelUtils.DecayedValue(
             self.hyperparameters.epsilon_schedule,
             self.hyperparameters.epsilon,
             0.1,
             self.trainer_settings.max_steps,
+            cyclic_settings=self.hyperparameters.cyclic_settings,
         )
         self.decay_beta = ModelUtils.DecayedValue(
             self.hyperparameters.beta_schedule,
             self.hyperparameters.beta,
             1e-5,
             self.trainer_settings.max_steps,
+            cyclic_settings=self.hyperparameters.cyclic_settings,
         )
 
         self.optimizer = torch.optim.Adam(

@@ -11,7 +11,7 @@ from mlagents.trainers.torch_entities.encoders import (
     FullyConnectedVisualEncoder,
     VectorInput,
 )
-from mlagents.trainers.settings import EncoderType, ScheduleType
+from mlagents.trainers.settings import EncoderType, ScheduleType, CyclicSettings
 from mlagents.trainers.torch_entities.attention import (
     EntityEmbedding,
     ResidualSelfAttention,
@@ -60,6 +60,7 @@ class ModelUtils:
         for param_group in optim.param_groups:
             param_group["lr"] = lr
 
+    # INTERIM CODE (BAD DESIGN): Temporarily added support for cyclic values but should be a separate class.
     class DecayedValue:
         def __init__(
             self,
@@ -67,6 +68,7 @@ class ModelUtils:
             initial_value: float,
             min_value: float,
             max_step: int,
+            cyclic_settings: CyclicSettings = None,
         ):
             """
             Object that represnets value of a parameter that should be decayed, assuming it is a function of
@@ -76,6 +78,7 @@ class ModelUtils:
             :param min_value: Decay value to this value by max_step.
             :param max_step: The final step count where the return value should equal min_value.
             :param global_step: The current step count.
+            :param cyclic_settings: Cyclic value control settings.
             :return: The value.
             """
             self.schedule = schedule
@@ -83,6 +86,12 @@ class ModelUtils:
             self.min_value = min_value
             self.max_step = max_step
 
+            self.cyclic_settings = cyclic_settings
+            self.step_size = self.cyclic_settings.step_size
+
+            if (self.schedule == ScheduleType.CYCLIC) and (self.step_size is None):
+                raise UnityTrainerException("Schedule type is set to cyclic but cycle size is not provided.")
+        
         def get_value(self, global_step: int) -> float:
             """
             Get the value at a given global step.
@@ -95,6 +104,21 @@ class ModelUtils:
                 return ModelUtils.polynomial_decay(
                     self.initial_value, self.min_value, self.max_step, global_step
                 )
+            elif self.schedule == ScheduleType.CYCLIC:
+                global_step = min(global_step, self.max_step)
+                current_bottom_idx = global_step // self.step_size
+                current_bottom_val = current_bottom_idx * self.step_size
+                normalized_step = global_step - current_bottom_val
+                progress = normalized_step / (self.step_size - 1)
+                grow_direction = 1 if (current_bottom_idx % 2 == 0) else -1
+                if grow_direction == 1:
+                    min_weight = 1 - progress
+                    max_weight = progress
+                elif grow_direction == -1:
+                    min_weight = progress
+                    max_weight = 1 - progress
+                resulting_val = (self.initial_value * min_weight) + (self.cyclic_settings.max_lr * max_weight)
+                return resulting_val
             else:
                 raise UnityTrainerException(f"The schedule {self.schedule} is invalid.")
 

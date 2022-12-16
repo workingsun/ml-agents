@@ -105,6 +105,7 @@ class EncoderType(Enum):
 class ScheduleType(Enum):
     CONSTANT = "constant"
     LINEAR = "linear"
+    CYCLIC = "cyclic"
     # TODO add support for lesson based scheduling
     # LESSON = "lesson"
 
@@ -112,6 +113,11 @@ class ScheduleType(Enum):
 class ConditioningType(Enum):
     HYPER = "hyper"
     NONE = "none"
+
+
+class CycleMode(Enum):
+    Triangular = "triangular"
+    Triangular2 = 'triangular2'
 
 
 @attr.s(auto_attribs=True)
@@ -159,6 +165,13 @@ class HyperparamSettings:
     buffer_size: int = 10240
     learning_rate: float = 3.0e-4
     learning_rate_schedule: ScheduleType = ScheduleType.CONSTANT
+
+
+@attr.s(auto_attribs=True)
+class CyclicSettings:
+    max_lr: float = 5.0e-4
+    step_size: int = 125000
+    cycle_mode: CycleMode = CycleMode.Triangular
 
 
 @attr.s(auto_attribs=True)
