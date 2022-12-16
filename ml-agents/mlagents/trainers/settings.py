@@ -115,11 +115,6 @@ class ConditioningType(Enum):
     NONE = "none"
 
 
-class CycleMode(Enum):
-    Triangular = "triangular"
-    Triangular2 = 'triangular2'
-
-
 @attr.s(auto_attribs=True)
 class NetworkSettings:
     @attr.s
@@ -169,9 +164,10 @@ class HyperparamSettings:
 
 @attr.s(auto_attribs=True)
 class CyclicSettings:
-    max_lr: float = 5.0e-4
+    max_val: float = 5.0e-4
     step_size: int = 125000
-    cycle_mode: CycleMode = CycleMode.Triangular
+    gamma: float = None
+    adjust_both: bool = False
 
 
 @attr.s(auto_attribs=True)

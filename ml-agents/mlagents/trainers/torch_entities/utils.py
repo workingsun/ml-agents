@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Dict
 from mlagents.torch_utils import torch, nn
 from mlagents.trainers.torch_entities.layers import LinearEncoder, Initialization
+import math
 import numpy as np
 
 from mlagents.trainers.torch_entities.encoders import (
@@ -86,11 +87,17 @@ class ModelUtils:
             self.min_value = min_value
             self.max_step = max_step
 
-            self.cyclic_settings = cyclic_settings
-            self.step_size = self.cyclic_settings.step_size
+            if self.schedule == ScheduleType.CYCLIC:
+                self.cyclic_settings = cyclic_settings
 
-            if (self.schedule == ScheduleType.CYCLIC) and (self.step_size is None):
-                raise UnityTrainerException("Schedule type is set to cyclic but cycle size is not provided.")
+                self.cycle = None
+                self.step_size = self.cyclic_settings.step_size
+                self.base_val = self.initial_value
+                self.max_val = self.cyclic_settings.max_val
+                self.gamma = self.cyclic_settings.gamma
+                
+                if self.step_size is None:
+                    raise UnityTrainerException("Schedule type is set to cyclic but cycle size is not provided.")
         
         def get_value(self, global_step: int) -> float:
             """
@@ -106,21 +113,46 @@ class ModelUtils:
                 )
             elif self.schedule == ScheduleType.CYCLIC:
                 global_step = min(global_step, self.max_step)
-                current_bottom_idx = global_step // self.step_size
-                current_bottom_val = current_bottom_idx * self.step_size
-                normalized_step = global_step - current_bottom_val
-                progress = normalized_step / (self.step_size - 1)
-                grow_direction = 1 if (current_bottom_idx % 2 == 0) else -1
-                if grow_direction == 1:
-                    min_weight = 1 - progress
-                    max_weight = progress
-                elif grow_direction == -1:
-                    min_weight = progress
-                    max_weight = 1 - progress
-                resulting_val = (self.initial_value * min_weight) + (self.cyclic_settings.max_lr * max_weight)
-                return resulting_val
+                val, new_cycle = ModelUtils.cyclic_value(global_step, self.step_size, self.base_val, self.max_val, self.gamma)
+                if (self.cycle is not None) and (self.cycle != new_cycle):
+                    if self.cyclic_settings.adjust_both:
+                        self.base_val *= self.gamma
+                    self.max_val *= self.gamma
+                    self.max_val = max(self.max_val, self.base_val)
+                self.cycle = new_cycle
+                return val
             else:
                 raise UnityTrainerException(f"The schedule {self.schedule} is invalid.")
+
+    @staticmethod
+    def cyclic_value(global_step: int, step_size: int, base_val: float, max_val: float, gamma: float = None) -> Tuple[float, int]:
+        if max_val == base_val:
+            return base_val
+        cycle = math.floor(1 + global_step / (2 * step_size))
+        x = abs(global_step / step_size - 2 * cycle + 1)
+        val = base_val + (max_val - base_val) * max(0, (1 - x))
+        return val, cycle
+
+    @staticmethod
+    def cyclic_value2(global_step: int, step_size: int, base_lr: float, max_lr: float) -> Tuple[float, float, float]:
+        current_bottom_idx = global_step // step_size
+        current_bottom_val = current_bottom_idx * step_size
+
+        normalized_step = global_step - current_bottom_val
+        progress = normalized_step / (step_size - 1)
+
+        grow_direction = 1 if (current_bottom_idx % 2 == 0) else -1
+
+        if grow_direction == 1:
+            min_weight = 1 - progress
+            max_weight = progress
+        elif grow_direction == -1:
+            min_weight = progress
+            max_weight = 1 - progress
+
+        resulting_val = (base_lr * min_weight) + (max_lr * max_weight)
+
+        return resulting_val, base_lr, max_lr
 
     @staticmethod
     def polynomial_decay(
