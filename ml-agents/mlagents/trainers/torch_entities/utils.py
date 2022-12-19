@@ -61,6 +61,16 @@ class ModelUtils:
         for param_group in optim.param_groups:
             param_group["lr"] = lr
 
+    @staticmethod
+    def update_momentum(optim: torch.optim.SGD, momentum: float) -> None:
+        """
+        Apply a momentum value to the given torch SGD optimizer.
+        :param optim: SGD optimizer.
+        :param momenum: Target momentum.
+        """
+        for param_group in optim.param_groups:
+            param_group["momentum"] = momentum
+
     # INTERIM CODE (BAD DESIGN): Temporarily added support for cyclic values but should be a separate class.
     class DecayedValue:
         def __init__(
@@ -190,9 +200,9 @@ class ModelUtils:
         """
         WIP
         """
-        if max_val == base_val:
-            return base_val
         cycle = math.floor(1 + global_step / (2 * step_size))
+        if max_val == base_val:
+            return base_val, cycle
         x = abs(global_step / step_size - 2 * cycle + 1)
         val = base_val + (max_val - base_val) * max(0, (x if inverse else (1 - x)))
         return val, cycle

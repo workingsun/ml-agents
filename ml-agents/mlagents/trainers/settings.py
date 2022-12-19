@@ -22,6 +22,8 @@ import numpy as np
 import math
 import copy
 
+import torch
+
 from mlagents.trainers.cli_utils import StoreConfigFile, DetectDefault, parser
 from mlagents.trainers.cli_utils import load_config
 from mlagents.trainers.exception import TrainerConfigError, TrainerConfigWarning
@@ -102,6 +104,20 @@ class EncoderType(Enum):
     RESNET = "resnet"
 
 
+class OptimizerType(Enum):
+    ADAM = "adam"
+    SGD = "sgd"
+
+    # DESIGN CHANGE: CREATE A GLOBAL DICT FOR RETRIEVING THE CLASS WITH THE GIVEN OPTIMIZER TYPE.
+    @staticmethod
+    def get_cls(name: str) -> Any:
+        if name == OptimizerType.ADAM:
+            return torch.optim.Adam
+        elif name == OptimizerType.SGD:
+            return torch.optim.SGD
+        else:
+            raise ValueError(f'Name {name} is not a valid optimizer type.')
+
 class ScheduleType(Enum):
     CONSTANT = "constant"
     LINEAR = "linear"
@@ -172,9 +188,9 @@ class InverseMomentumSettings:
 class CyclicSettings:
     max_val: float = 5.0e-4
     step_size: int = 125000
-    gamma: float = None
+    gamma: float = 1.0
     adjust_both: bool = False
-    inverse_momentum: InverseMomentumSettings = None
+    inverse_momentum: Optional[InverseMomentumSettings] = None
 
 
 @attr.s(auto_attribs=True)

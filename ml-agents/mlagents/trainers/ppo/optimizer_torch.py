@@ -5,14 +5,16 @@ from mlagents.torch_utils import torch, default_device
 
 from mlagents.trainers.buffer import AgentBuffer, BufferKey, RewardSignalUtil
 
+from mlagents_envs import logging_util
 from mlagents_envs.timers import timed
 from mlagents.trainers.policy.torch_policy import TorchPolicy
 from mlagents.trainers.optimizer.torch_optimizer import TorchOptimizer
 from mlagents.trainers.settings import (
+    CyclicSettings,
     TrainerSettings,
     OnPolicyHyperparamSettings,
+    OptimizerType,
     ScheduleType,
-    CyclicSettings,
 )
 from mlagents.trainers.torch_entities.networks import ValueNetwork
 from mlagents.trainers.torch_entities.agent_action import AgentAction
@@ -20,6 +22,7 @@ from mlagents.trainers.torch_entities.action_log_probs import ActionLogProbs
 from mlagents.trainers.torch_entities.utils import ModelUtils
 from mlagents.trainers.trajectory import ObsUtil
 
+logger = logging_util.get_logger(__name__)
 
 @attr.s(auto_attribs=True)
 class PPOSettings(OnPolicyHyperparamSettings):
@@ -28,6 +31,7 @@ class PPOSettings(OnPolicyHyperparamSettings):
     lambd: float = 0.95
     num_epoch: int = 3
     shared_critic: bool = False
+    optimizer: OptimizerType = OptimizerType.ADAM
     learning_rate_schedule: ScheduleType = ScheduleType.LINEAR
     beta_schedule: ScheduleType = ScheduleType.LINEAR
     epsilon_schedule: ScheduleType = ScheduleType.LINEAR
@@ -68,6 +72,9 @@ class TorchPPOOptimizer(TorchOptimizer):
         # Check if inverse cyclic momentum is enabled
         self.use_inv_momentum = (self.hyperparameters.cyclic_settings is not None) and \
                                 (self.hyperparameters.cyclic_settings.inverse_momentum is not None)
+        if (self.use_inv_momentum) and (self.hyperparameters.optimizer != OptimizerType.SGD):
+            self.use_inv_momentum = False
+            logger.warning(f"Optimizer type {self.hyperparameters.optimizer} does not support momentum cycling. Disabled inverse momentum cycling.")
 
         self.decay_learning_rate = ModelUtils.DecayedValue(
             self.hyperparameters.learning_rate_schedule,
@@ -99,8 +106,8 @@ class TorchPPOOptimizer(TorchOptimizer):
             self.trainer_settings.max_steps,
             cyclic_settings=self.hyperparameters.cyclic_settings,
         )
-
-        self.optimizer = torch.optim.Adam(
+        
+        self.optimizer = OptimizerType.get_cls(self.hyperparameters.optimizer)(
             params, lr=self.trainer_settings.hyperparameters.learning_rate
         )
         self.stats_name_to_update_name = {
@@ -200,8 +207,8 @@ class TorchPPOOptimizer(TorchOptimizer):
 
         # Set optimizer learning rate and momentum
         ModelUtils.update_learning_rate(self.optimizer, decay_lr)
-        # if decay_momentum:
-        #     ModelUtils.update_momentum(self.optimizer, decay_momentum)
+        if decay_momentum:
+            ModelUtils.update_momentum(self.optimizer, decay_momentum)
         self.optimizer.zero_grad()
         loss.backward()
 
