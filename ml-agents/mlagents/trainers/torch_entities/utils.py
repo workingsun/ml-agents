@@ -113,7 +113,7 @@ class ModelUtils:
                 )
             elif self.schedule == ScheduleType.CYCLIC:
                 global_step = min(global_step, self.max_step)
-                val, new_cycle = ModelUtils.cyclic_value(global_step, self.step_size, self.base_val, self.max_val, self.gamma)
+                val, new_cycle = ModelUtils.cyclic_value(global_step, self.step_size, self.base_val, self.max_val)
                 if (self.cycle is not None) and (self.cycle != new_cycle):
                     if self.cyclic_settings.adjust_both:
                         self.base_val *= self.gamma
@@ -124,17 +124,89 @@ class ModelUtils:
             else:
                 raise UnityTrainerException(f"The schedule {self.schedule} is invalid.")
 
+    class CyclicValue:
+        def __init__(
+            self,
+            base_value: float,
+            max_value: float,
+            gamma: float,
+            max_step: int,
+            step_size: int,
+            is_inverse: bool = False,
+            adjust_both: bool = False,
+        ):
+            """
+            Object that represents value of a parameter that uses a cyclic policy, assuming it is a function of
+            global_step.
+            :param base_value: The initial base value boundary.
+            :param max_value: The initial maximum value boundary.
+            :param gamma: Discount rate.
+            :param max_step: The final step count where the return value should equal min_value.
+            :param step_size: Size of the half-cycle.
+            :param is_inverse: Inverse cyclic value or not.
+            :param adjust_both: Whether to adjust both min and max boundaries.
+            :return: The value.
+            """
+            self.base_value = base_value
+            self.max_value = max_value
+            self.gamma = gamma
+            self.max_step = max_step
+            self.step_size = step_size
+            self.is_inverse = is_inverse
+            self.adjust_both = adjust_both
+
+            self.cycle = None
+        
+        def get_value(self, global_step: int) -> float:
+            """
+            Get the value at a given global step.
+            :param global_step: Step count.
+            :returns: Decayed value at this global step.
+            """
+            global_step = min(global_step, self.max_step)
+            val, new_cycle = ModelUtils.cyclic_value(
+                global_step,
+                self.step_size,
+                self.base_value,
+                self.max_value,
+                inverse=self.is_inverse,
+            )
+            if (self.cycle is not None) and (self.cycle != new_cycle):
+                if self.adjust_both:
+                    self.base_value *= self.gamma
+                self.max_value *= self.gamma
+                self.max_value = max(self.max_value, self.base_value)
+            self.cycle = new_cycle
+            return val
+
     @staticmethod
-    def cyclic_value(global_step: int, step_size: int, base_val: float, max_val: float, gamma: float = None) -> Tuple[float, int]:
+    def cyclic_value(
+        global_step: int,
+        step_size: int,
+        base_val: float,
+        max_val: float,
+        inverse: Optional[bool] = False,
+    ) -> Tuple[float, int]:
+        """
+        WIP
+        """
         if max_val == base_val:
             return base_val
         cycle = math.floor(1 + global_step / (2 * step_size))
         x = abs(global_step / step_size - 2 * cycle + 1)
-        val = base_val + (max_val - base_val) * max(0, (1 - x))
+        val = base_val + (max_val - base_val) * max(0, (x if inverse else (1 - x)))
         return val, cycle
 
     @staticmethod
-    def cyclic_value2(global_step: int, step_size: int, base_lr: float, max_lr: float) -> Tuple[float, float, float]:
+    def cyclic_value2(
+        global_step: int,
+        step_size: int,
+        base_lr: float,
+        max_lr: float
+    ) -> Tuple[float, float, float]:
+        """
+        WIP
+        """
         current_bottom_idx = global_step // step_size
         current_bottom_val = current_bottom_idx * step_size
 

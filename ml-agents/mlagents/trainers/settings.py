@@ -163,11 +163,18 @@ class HyperparamSettings:
 
 
 @attr.s(auto_attribs=True)
+class InverseMomentumSettings:
+    base_momentum: float = 0.8
+    max_momentum: float = 1.0
+
+
+@attr.s(auto_attribs=True)
 class CyclicSettings:
     max_val: float = 5.0e-4
     step_size: int = 125000
     gamma: float = None
     adjust_both: bool = False
+    inverse_momentum: InverseMomentumSettings = None
 
 
 @attr.s(auto_attribs=True)

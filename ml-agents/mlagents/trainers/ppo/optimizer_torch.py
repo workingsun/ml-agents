@@ -65,6 +65,10 @@ class TorchPPOOptimizer(TorchOptimizer):
             self._critic.to(default_device())
             params += list(self._critic.parameters())
 
+        # Check if inverse cyclic momentum is enabled
+        self.use_inv_momentum = (self.hyperparameters.cyclic_settings is not None) and \
+                                (self.hyperparameters.cyclic_settings.inverse_momentum is not None)
+
         self.decay_learning_rate = ModelUtils.DecayedValue(
             self.hyperparameters.learning_rate_schedule,
             self.hyperparameters.learning_rate,
@@ -72,6 +76,15 @@ class TorchPPOOptimizer(TorchOptimizer):
             self.trainer_settings.max_steps,
             cyclic_settings=self.hyperparameters.cyclic_settings,
         )
+        if self.use_inv_momentum:
+            self.decay_momentum = ModelUtils.CyclicValue(
+                self.hyperparameters.cyclic_settings.inverse_momentum.base_momentum,
+                self.hyperparameters.cyclic_settings.inverse_momentum.max_momentum,
+                self.hyperparameters.cyclic_settings.gamma,
+                self.trainer_settings.max_steps,
+                self.hyperparameters.cyclic_settings.step_size,
+                True,
+            )
         self.decay_epsilon = ModelUtils.DecayedValue(
             self.hyperparameters.epsilon_schedule,
             self.hyperparameters.epsilon,
@@ -111,6 +124,8 @@ class TorchPPOOptimizer(TorchOptimizer):
         """
         # Get decayed parameters
         decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
+        decay_momentum = self.decay_momentum.get_value(self.policy.get_current_step()) \
+            if self.use_inv_momentum else None
         decay_eps = self.decay_epsilon.get_value(self.policy.get_current_step())
         decay_bet = self.decay_beta.get_value(self.policy.get_current_step())
         returns = {}
@@ -183,8 +198,10 @@ class TorchPPOOptimizer(TorchOptimizer):
             - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
         )
 
-        # Set optimizer learning rate
+        # Set optimizer learning rate and momentum
         ModelUtils.update_learning_rate(self.optimizer, decay_lr)
+        # if decay_momentum:
+        #     ModelUtils.update_momentum(self.optimizer, decay_momentum)
         self.optimizer.zero_grad()
         loss.backward()
 
@@ -198,6 +215,9 @@ class TorchPPOOptimizer(TorchOptimizer):
             "Policy/Epsilon": decay_eps,
             "Policy/Beta": decay_bet,
         }
+
+        if decay_momentum:
+            update_stats["Policy/Momentum"] = decay_momentum
 
         return update_stats
 
