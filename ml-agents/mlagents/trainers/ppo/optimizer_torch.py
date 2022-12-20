@@ -1,4 +1,4 @@
-from typing import Dict, cast
+from typing import Dict, Optional, cast
 import attr
 
 from mlagents.torch_utils import torch, default_device
@@ -35,7 +35,7 @@ class PPOSettings(OnPolicyHyperparamSettings):
     learning_rate_schedule: ScheduleType = ScheduleType.LINEAR
     beta_schedule: ScheduleType = ScheduleType.LINEAR
     epsilon_schedule: ScheduleType = ScheduleType.LINEAR
-    cyclic_settings: CyclicSettings = None
+    cyclic_settings: Optional[CyclicSettings] = None
 
 
 class TorchPPOOptimizer(TorchOptimizer):
@@ -106,7 +106,7 @@ class TorchPPOOptimizer(TorchOptimizer):
             self.trainer_settings.max_steps,
             cyclic_settings=self.hyperparameters.cyclic_settings,
         )
-        
+
         self.optimizer = OptimizerType.get_cls(self.hyperparameters.optimizer)(
             params, lr=self.trainer_settings.hyperparameters.learning_rate
         )
