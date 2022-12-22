@@ -86,7 +86,6 @@ class TorchPPOOptimizer(TorchOptimizer):
             self.hyperparameters.learning_rate,
             1e-10,
             self.trainer_settings.max_steps,
-            cyclic_settings=self.hyperparameters.cyclic_lr,
         ) if self.hyperparameters.learning_rate_schedule != ScheduleType.CYCLIC else ModelUtils.CyclicValue(
             self.hyperparameters.cyclic_lr.base_val,
             self.hyperparameters.cyclic_lr.max_val,

@@ -7,7 +7,7 @@ from mlagents.torch_utils import torch, nn, default_device
 from mlagents_envs.logging_util import get_logger
 from mlagents.trainers.optimizer.torch_optimizer import TorchOptimizer
 from mlagents.trainers.policy.torch_policy import TorchPolicy
-from mlagents.trainers.settings import NetworkSettings
+from mlagents.trainers.settings import CyclicValueSettings, NetworkSettings, OptimizerType, ScheduleType
 from mlagents.trainers.torch_entities.networks import ValueNetwork, SharedActorCritic
 from mlagents.trainers.torch_entities.agent_action import AgentAction
 from mlagents.trainers.torch_entities.action_log_probs import ActionLogProbs
@@ -35,6 +35,10 @@ class SACSettings(OffPolicyHyperparamSettings):
     save_replay_buffer: bool = False
     init_entcoef: float = 1.0
     reward_signal_steps_per_update: float = attr.ib()
+    policy_optimizer: OptimizerType = OptimizerType.ADAM
+    value_optimizer: OptimizerType = OptimizerType.ADAM
+    entropy_optimizer: OptimizerType = OptimizerType.ADAM
+    cyclic_lr: Optional[CyclicValueSettings] = None
 
     @reward_signal_steps_per_update.default
     def _reward_signal_steps_per_update_default(self):
@@ -213,19 +217,31 @@ class TorchSACOptimizer(TorchOptimizer):
         for param in policy_params:
             logger.debug(param.shape)
 
-        self.decay_learning_rate = ModelUtils.DecayedValue(
-            hyperparameters.learning_rate_schedule,
-            hyperparameters.learning_rate,
-            1e-10,
-            self.trainer_settings.max_steps,
-        )
-        self.policy_optimizer = torch.optim.Adam(
+        if hyperparameters.learning_rate_schedule != ScheduleType.CYCLIC:
+            self.decay_learning_rate = ModelUtils.DecayedValue(
+                hyperparameters.learning_rate_schedule,
+                hyperparameters.learning_rate,
+                1e-10,
+                self.trainer_settings.max_steps,
+            )
+        else:
+            hyperparameters.learning_rate = hyperparameters.cyclic_lr.base_val
+            self.decay_learning_rate = ModelUtils.CyclicValue(
+                hyperparameters.cyclic_lr.base_val,
+                hyperparameters.cyclic_lr.max_val,
+                hyperparameters.cyclic_lr.gamma,
+                self.trainer_settings.max_steps,
+                hyperparameters.cyclic_lr.step_size,
+                False,
+                adjust_both=hyperparameters.cyclic_lr.adjust_both,
+            )
+        self.policy_optimizer = OptimizerType.get_cls(hyperparameters.policy_optimizer)(
             policy_params, lr=hyperparameters.learning_rate
         )
-        self.value_optimizer = torch.optim.Adam(
+        self.value_optimizer = OptimizerType.get_cls(hyperparameters.value_optimizer)(
             value_params, lr=hyperparameters.learning_rate
         )
-        self.entropy_optimizer = torch.optim.Adam(
+        self.entropy_optimizer = OptimizerType.get_cls(hyperparameters.entropy_optimizer)(
             self._log_ent_coef.parameters(), lr=hyperparameters.learning_rate
         )
         self._move_to_device(default_device())
