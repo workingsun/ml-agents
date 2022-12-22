@@ -41,6 +41,7 @@ class TorchOptimizer(Optimizer):
                 policy_learning_rate=trainer_settings.hyperparameters.learning_rate,
                 default_batch_size=trainer_settings.hyperparameters.batch_size,
                 default_num_epoch=3,
+                max_steps = trainer_settings.max_steps,
             )
 
     @property

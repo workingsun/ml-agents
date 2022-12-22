@@ -36,6 +36,8 @@ class TorchModelSaver(BaseModelSaver):
     def register(self, module: Union[TorchPolicy, TorchOptimizer]) -> None:
         if isinstance(module, TorchPolicy) or isinstance(module, TorchOptimizer):
             self.modules.update(module.get_modules())  # type: ignore
+            if isinstance(module, torch.nn.Module):
+                logger.debug(f"Registering the following torch module to the model saver:\n{module}")
         else:
             raise UnityPolicyException(
                 "Registering Object of unsupported type {} to ModelSaver ".format(

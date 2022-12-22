@@ -10,7 +10,8 @@ from mlagents_envs.timers import timed
 from mlagents.trainers.policy.torch_policy import TorchPolicy
 from mlagents.trainers.optimizer.torch_optimizer import TorchOptimizer
 from mlagents.trainers.settings import (
-    CyclicSettings,
+    CyclicValueSettings,
+    InverseMomentumSettings,
     TrainerSettings,
     OnPolicyHyperparamSettings,
     OptimizerType,
@@ -24,6 +25,7 @@ from mlagents.trainers.trajectory import ObsUtil
 
 logger = logging_util.get_logger(__name__)
 
+
 @attr.s(auto_attribs=True)
 class PPOSettings(OnPolicyHyperparamSettings):
     beta: float = 5.0e-3
@@ -35,7 +37,8 @@ class PPOSettings(OnPolicyHyperparamSettings):
     learning_rate_schedule: ScheduleType = ScheduleType.LINEAR
     beta_schedule: ScheduleType = ScheduleType.LINEAR
     epsilon_schedule: ScheduleType = ScheduleType.LINEAR
-    cyclic_settings: Optional[CyclicSettings] = None
+    cyclic_lr: Optional[CyclicValueSettings] = None
+    inverse_momentum: Optional[InverseMomentumSettings] = None
 
 
 class TorchPPOOptimizer(TorchOptimizer):
@@ -70,41 +73,58 @@ class TorchPPOOptimizer(TorchOptimizer):
             params += list(self._critic.parameters())
 
         # Check if inverse cyclic momentum is enabled
-        self.use_inv_momentum = (self.hyperparameters.cyclic_settings is not None) and \
-                                (self.hyperparameters.cyclic_settings.inverse_momentum is not None)
-        if (self.use_inv_momentum) and (self.hyperparameters.optimizer != OptimizerType.SGD):
-            self.use_inv_momentum = False
-            logger.warning(f"Optimizer type {self.hyperparameters.optimizer} does not support momentum cycling. Disabled inverse momentum cycling.")
+        if self.hyperparameters.inverse_momentum is not None:
+            self.use_inv_momentum = True
+            if (self.hyperparameters.optimizer != OptimizerType.SGD) or \
+               (self.hyperparameters.cyclic_lr is None):
+                logger.warning(f"Optimizer type should be set to SGD and cyclic learning rate \
+                               should be set in order to use inverse momentum cycling.")
+                self.use_inv_momentum = False
 
         self.decay_learning_rate = ModelUtils.DecayedValue(
             self.hyperparameters.learning_rate_schedule,
             self.hyperparameters.learning_rate,
             1e-10,
             self.trainer_settings.max_steps,
-            cyclic_settings=self.hyperparameters.cyclic_settings,
+            cyclic_settings=self.hyperparameters.cyclic_lr,
+        ) if self.hyperparameters.learning_rate_schedule != ScheduleType.CYCLIC else ModelUtils.CyclicValue(
+            self.hyperparameters.cyclic_lr.base_val,
+            self.hyperparameters.cyclic_lr.max_val,
+            self.hyperparameters.cyclic_lr.gamma,
+            self.trainer_settings.max_steps,
+            self.hyperparameters.cyclic_lr.step_size,
+            False,
+            adjust_both=self.hyperparameters.cyclic_lr.adjust_both,
         )
+
         if self.use_inv_momentum:
             self.decay_momentum = ModelUtils.CyclicValue(
-                self.hyperparameters.cyclic_settings.inverse_momentum.base_momentum,
-                self.hyperparameters.cyclic_settings.inverse_momentum.max_momentum,
-                self.hyperparameters.cyclic_settings.gamma,
+                self.hyperparameters.cyclic_lr.inverse_momentum.base_momentum,
+                self.hyperparameters.cyclic_lr.inverse_momentum.max_momentum,
+                self.hyperparameters.cyclic_lr.gamma,
                 self.trainer_settings.max_steps,
-                self.hyperparameters.cyclic_settings.step_size,
+                self.hyperparameters.cyclic_lr.step_size,
                 True,
             )
+        
+        if self.hyperparameters.epsilon_schedule == ScheduleType.CYCLIC:
+            logger.warning("Cyclic scheduling is not supported for the epsilon hyperparameter.")
+            self.hyperparameters.epsilon_schedule = ScheduleType.LINEAR
         self.decay_epsilon = ModelUtils.DecayedValue(
             self.hyperparameters.epsilon_schedule,
             self.hyperparameters.epsilon,
             0.1,
             self.trainer_settings.max_steps,
-            cyclic_settings=self.hyperparameters.cyclic_settings,
         )
+
+        if self.hyperparameters.beta_schedule == ScheduleType.CYCLIC:
+            logger.warning("Cyclic scheduling is not supported for the beta hyperparameter.")
+            self.hyperparameters.beta_schedule = ScheduleType.LINEAR
         self.decay_beta = ModelUtils.DecayedValue(
             self.hyperparameters.beta_schedule,
             self.hyperparameters.beta,
             1e-5,
             self.trainer_settings.max_steps,
-            cyclic_settings=self.hyperparameters.cyclic_settings,
         )
 
         self.optimizer = OptimizerType.get_cls(self.hyperparameters.optimizer)(

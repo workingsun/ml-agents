@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Dict
 from mlagents.torch_utils import torch, nn
 from mlagents.trainers.torch_entities.layers import LinearEncoder, Initialization
+import abc
 import math
 import numpy as np
 
@@ -12,7 +13,7 @@ from mlagents.trainers.torch_entities.encoders import (
     FullyConnectedVisualEncoder,
     VectorInput,
 )
-from mlagents.trainers.settings import EncoderType, ScheduleType, CyclicSettings
+from mlagents.trainers.settings import EncoderType, ScheduleType, CyclicValueSettings
 from mlagents.trainers.torch_entities.attention import (
     EntityEmbedding,
     ResidualSelfAttention,
@@ -71,15 +72,18 @@ class ModelUtils:
         for param_group in optim.param_groups:
             param_group["momentum"] = momentum
 
-    # INTERIM CODE (BAD DESIGN): Temporarily added support for cyclic values but should be a separate class.
-    class DecayedValue:
+    class ScheduledValue(abc.ABC):
+        @abc.abstractmethod
+        def get_value(self, global_step: int) -> float:
+            pass
+
+    class DecayedValue(ScheduledValue):
         def __init__(
             self,
             schedule: ScheduleType,
             initial_value: float,
             min_value: float,
             max_step: int,
-            cyclic_settings: CyclicSettings = None,
         ):
             """
             Object that represnets value of a parameter that should be decayed, assuming it is a function of
@@ -89,25 +93,12 @@ class ModelUtils:
             :param min_value: Decay value to this value by max_step.
             :param max_step: The final step count where the return value should equal min_value.
             :param global_step: The current step count.
-            :param cyclic_settings: Cyclic value control settings.
             :return: The value.
             """
             self.schedule = schedule
             self.initial_value = initial_value
             self.min_value = min_value
             self.max_step = max_step
-
-            if self.schedule == ScheduleType.CYCLIC:
-                self.cyclic_settings = cyclic_settings
-
-                self.cycle = None
-                self.step_size = self.cyclic_settings.step_size
-                self.base_val = self.initial_value
-                self.max_val = self.cyclic_settings.max_val
-                self.gamma = self.cyclic_settings.gamma
-                
-                if self.step_size is None:
-                    raise UnityTrainerException("Schedule type is set to cyclic but cycle size is not provided.")
         
         def get_value(self, global_step: int) -> float:
             """
@@ -121,20 +112,10 @@ class ModelUtils:
                 return ModelUtils.polynomial_decay(
                     self.initial_value, self.min_value, self.max_step, global_step
                 )
-            elif self.schedule == ScheduleType.CYCLIC:
-                global_step = min(global_step, self.max_step)
-                val, new_cycle = ModelUtils.cyclic_value(global_step, self.step_size, self.base_val, self.max_val)
-                if (self.cycle is not None) and (self.cycle != new_cycle):
-                    if self.cyclic_settings.adjust_both:
-                        self.base_val *= self.gamma
-                    self.max_val *= self.gamma
-                    self.max_val = max(self.max_val, self.base_val)
-                self.cycle = new_cycle
-                return val
             else:
                 raise UnityTrainerException(f"The schedule {self.schedule} is invalid.")
 
-    class CyclicValue:
+    class CyclicValue(ScheduledValue):
         def __init__(
             self,
             base_value: float,
@@ -206,35 +187,6 @@ class ModelUtils:
         x = abs(global_step / step_size - 2 * cycle + 1)
         val = base_val + (max_val - base_val) * max(0, (x if inverse else (1 - x)))
         return val, cycle
-
-    @staticmethod
-    def cyclic_value2(
-        global_step: int,
-        step_size: int,
-        base_lr: float,
-        max_lr: float
-    ) -> Tuple[float, float, float]:
-        """
-        WIP
-        """
-        current_bottom_idx = global_step // step_size
-        current_bottom_val = current_bottom_idx * step_size
-
-        normalized_step = global_step - current_bottom_val
-        progress = normalized_step / (step_size - 1)
-
-        grow_direction = 1 if (current_bottom_idx % 2 == 0) else -1
-
-        if grow_direction == 1:
-            min_weight = 1 - progress
-            max_weight = progress
-        elif grow_direction == -1:
-            min_weight = progress
-            max_weight = 1 - progress
-
-        resulting_val = (base_lr * min_weight) + (max_lr * max_weight)
-
-        return resulting_val, base_lr, max_lr
 
     @staticmethod
     def polynomial_decay(

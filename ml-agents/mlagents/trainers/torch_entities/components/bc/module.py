@@ -11,6 +11,10 @@ from mlagents.trainers.torch_entities.utils import ModelUtils
 from mlagents.trainers.trajectory import ObsUtil
 from mlagents.trainers.buffer import AgentBuffer
 
+from mlagents_envs import logging_util
+
+logger = logging_util.get_logger(__name__)
+
 
 class BCModule:
     def __init__(
@@ -20,6 +24,7 @@ class BCModule:
         policy_learning_rate: float,
         default_batch_size: int,
         default_num_epoch: int,
+        max_steps: int,
     ):
         """
         A BC trainer that can be used inline with RL.
@@ -34,11 +39,28 @@ class BCModule:
         self.current_lr = policy_learning_rate * settings.strength
 
         learning_rate_schedule: ScheduleType = (
-            ScheduleType.LINEAR if self._anneal_steps > 0 else ScheduleType.CONSTANT
+            ScheduleType.CYCLIC if settings.cyclic_lr is not None else (
+                ScheduleType.LINEAR if self._anneal_steps > 0 else ScheduleType.CONSTANT
+            )
         )
-        self.decay_learning_rate = ModelUtils.DecayedValue(
-            learning_rate_schedule, self.current_lr, 1e-10, self._anneal_steps
-        )
+
+        if learning_rate_schedule != ScheduleType.CYCLIC:
+            self.decay_learning_rate = ModelUtils.DecayedValue(
+                learning_rate_schedule, self.current_lr, 1e-10, self._anneal_steps
+            )
+        else:
+            logger.debug("Using cyclic learning rate for the behavioral cloning module.")
+            self.cyclic_settings = settings.cyclic_lr
+            self.max_lr = self.cyclic_settings.max_val * settings.strength
+            self.decay_learning_rate = ModelUtils.CyclicValue(
+                self.current_lr,
+                self.max_lr,
+                self.cyclic_settings.gamma,
+                max_steps,
+                self.cyclic_settings.step_size,
+                adjust_both=self.cyclic_settings.adjust_both
+            )
+        
         params = self.policy.actor.parameters()
         self.optimizer = torch.optim.Adam(params, lr=self.current_lr)
         _, self.demonstration_buffer = demo_to_buffer(

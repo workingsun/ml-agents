@@ -110,13 +110,13 @@ class OptimizerType(Enum):
 
     # DESIGN CHANGE: CREATE A GLOBAL DICT FOR RETRIEVING THE CLASS WITH THE GIVEN OPTIMIZER TYPE.
     @staticmethod
-    def get_cls(name: str) -> Any:
+    def get_cls(name: str) -> type:
         if name == OptimizerType.ADAM:
             return torch.optim.Adam
         elif name == OptimizerType.SGD:
             return torch.optim.SGD
         else:
-            raise ValueError(f'Name {name} is not a valid optimizer type.')
+            raise ValueError(f'{name} is not a valid optimizer name.')
 
 class ScheduleType(Enum):
     CONSTANT = "constant"
@@ -159,11 +159,27 @@ class NetworkSettings:
 
 
 @attr.s(auto_attribs=True)
+class CyclicValueSettings:
+    base_val: float = 1.0e-4
+    max_val: float = 5.0e-4
+    step_size: int = 100000
+    gamma: float = 1.0
+    adjust_both: bool = False
+
+
+@attr.s(auto_attribs=True)
+class InverseMomentumSettings:
+    base_momentum: float = 0.8
+    max_momentum: float = 1.0
+
+
+@attr.s(auto_attribs=True)
 class BehavioralCloningSettings:
     demo_path: str
     steps: int = 0
     strength: float = 1.0
     samples_per_update: int = 0
+    cyclic_lr: Optional[CyclicValueSettings] = None
     # Setting either of these to None will allow the Optimizer
     # to decide these parameters, based on Trainer hyperparams
     num_epoch: Optional[int] = None
@@ -176,21 +192,6 @@ class HyperparamSettings:
     buffer_size: int = 10240
     learning_rate: float = 3.0e-4
     learning_rate_schedule: ScheduleType = ScheduleType.CONSTANT
-
-
-@attr.s(auto_attribs=True)
-class InverseMomentumSettings:
-    base_momentum: float = 0.8
-    max_momentum: float = 1.0
-
-
-@attr.s(auto_attribs=True)
-class CyclicSettings:
-    max_val: float = 5.0e-4
-    step_size: int = 125000
-    gamma: float = 1.0
-    adjust_both: bool = False
-    inverse_momentum: Optional[InverseMomentumSettings] = None
 
 
 @attr.s(auto_attribs=True)
