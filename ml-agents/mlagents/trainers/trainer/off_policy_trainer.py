@@ -78,6 +78,8 @@ class OffPolicyTrainer(RLTrainer):
 
         self.checkpoint_replay_buffer = self.hyperparameters.save_replay_buffer
 
+        self.n_bc_updates = 0
+
     def _checkpoint(self) -> ModelCheckpoint:
         """
         Writes a checkpoint model to memory
@@ -128,6 +130,7 @@ class OffPolicyTrainer(RLTrainer):
         Returns whether or not the trainer has enough elements to run update model
         :return: A boolean corresponding to whether or not _update_policy() can be run
         """
+        self.stats_reporter.add_stat("Policy/Buffer Size", self.update_buffer.num_experiences)
         return (
             self.update_buffer.num_experiences >= self.hyperparameters.batch_size
             and self._step >= self.hyperparameters.buffer_init_steps
@@ -220,6 +223,8 @@ class OffPolicyTrainer(RLTrainer):
 
             if self.optimizer.bc_module:
                 update_stats = self.optimizer.bc_module.update()
+                self.n_bc_updates += 1
+                self._stats_reporter.add_stat("Policy/BC Update Count", self.n_bc_updates)
                 for stat, val in update_stats.items():
                     self._stats_reporter.add_stat(stat, val)
 

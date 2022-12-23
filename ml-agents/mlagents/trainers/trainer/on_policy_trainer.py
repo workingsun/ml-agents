@@ -56,6 +56,8 @@ class OnPolicyTrainer(RLTrainer):
         self.policy: Policy = None  # type: ignore
         self.optimizer: TorchOptimizer = None  # type: ignore
 
+        self.n_bc_updates = 0
+
     def _is_ready_update(self):
         """
         Returns whether or not the trainer has enough elements to run update model
@@ -109,6 +111,8 @@ class OnPolicyTrainer(RLTrainer):
 
         if self.optimizer.bc_module:
             update_stats = self.optimizer.bc_module.update()
+            self.n_bc_updates += 1
+            self._stats_reporter.add_stat("Policy/BC Update Count", self.n_bc_updates)
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
         self._clear_update_buffer()

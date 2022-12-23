@@ -11,6 +11,9 @@ from mlagents.trainers.torch_entities.utils import ModelUtils
 from mlagents.trainers.trajectory import ObsUtil
 from mlagents.trainers.buffer import AgentBuffer
 
+from random import random
+from time import time
+
 from mlagents_envs import logging_util
 
 logger = logging_util.get_logger(__name__)
@@ -76,9 +79,16 @@ class BCModule:
             1,
         )
 
+        logger.debug(f"Initializing BC module: num_epoch is {self.num_epoch} and n_sequences is {self.n_sequences}")
+
         self.has_updated = False
         self.use_recurrent = self.policy.use_recurrent
         self.samples_per_update = settings.samples_per_update
+
+        self.update_cycle = 0
+
+        self.update_every = settings.update_every
+        self.update_prob = settings.update_prob
 
     def update(self) -> Dict[str, np.ndarray]:
         """
@@ -87,6 +97,23 @@ class BCModule:
         :return: The loss of the update.
         """
         # Don't continue training if the learning rate has reached 0, to reduce training time.
+
+        # Check update_every to decide if we want to skip or not
+        if self.update_every:
+            if self.update_cycle % self.update_every == 0:
+                self.update_cycle = 1
+            else:
+                logger.debug("Skipping BC module update.")
+                self.update_cycle += 1
+                return dict()
+
+        # Check update_prob to decide if we want to skip or not
+        if self.update_prob:
+            if random() > self.update_prob:
+                logger.debug("Skipping BC module update.")
+                return dict()
+
+        start_time = time()
 
         decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
         if self.current_lr <= 1e-10:  # Unlike in TF, this never actually reaches 0.
@@ -121,8 +148,13 @@ class BCModule:
         ModelUtils.update_learning_rate(self.optimizer, decay_lr)
         self.current_lr = decay_lr
 
+        logger.debug(f"BC module updated; time elapsed: {(time() - start_time):.2f} seconds.")
+
         self.has_updated = True
-        update_stats = {"Losses/Pretraining Loss": np.mean(batch_losses)}
+        update_stats = {
+            "Losses/Pretraining Loss": np.mean(batch_losses),
+            "Policy/BC Learning Rate": self.current_lr,
+        }
         return update_stats
 
     def _behavioral_cloning_loss(

@@ -180,6 +180,8 @@ class BehavioralCloningSettings:
     strength: float = 1.0
     samples_per_update: int = 0
     cyclic_lr: Optional[CyclicValueSettings] = None
+    update_every: Optional[int] = None
+    update_prob: Optional[float] = None
     # Setting either of these to None will allow the Optimizer
     # to decide these parameters, based on Trainer hyperparams
     num_epoch: Optional[int] = None

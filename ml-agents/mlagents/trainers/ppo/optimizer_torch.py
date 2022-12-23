@@ -73,7 +73,8 @@ class TorchPPOOptimizer(TorchOptimizer):
             params += list(self._critic.parameters())
 
         # Check if inverse cyclic momentum is enabled
-        if self.hyperparameters.inverse_momentum is not None:
+        self.use_inv_momentum = self.hyperparameters.inverse_momentum is not None
+        if self.use_inv_momentum:
             self.use_inv_momentum = True
             if (self.hyperparameters.optimizer != OptimizerType.SGD) or \
                (self.hyperparameters.cyclic_lr is None):
